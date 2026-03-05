@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>後台管理系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bgh: #2d333b;
+  --border: #30363d; --accent: #58a6ff; --green: #3fb950;
+  --red: #f78166; --orange: #ffa657; --purple: #d2a8ff;
+  --t1: #e6edf3; --t2: #8b949e; --t3: #484f58;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--t1);display:flex;height:100vh;overflow:hidden}
+
+/* ─ SIDEBAR ─ */
+.sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.logo{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.logo-icon{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:17px}
+.logo-text{font-size:14px;font-weight:700}
+.logo-sub{font-size:10px;color:var(--t2)}
+nav{flex:1;padding:12px 10px;overflow-y:auto}
+.nav-group{font-size:10px;font-weight:600;color:var(--t3);letter-spacing:1px;text-transform:uppercase;padding:10px 10px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--t2);transition:all .15s;margin-bottom:1px;position:relative}
+.nav-item:hover{background:var(--bgh);color:var(--t1)}
+.nav-item.active{background:rgba(88,166,255,.12);color:var(--accent)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:16px;background:var(--accent);border-radius:0 3px 3px 0}
+.nav-icon{font-size:15px;width:18px;text-align:center}
+.sidebar-foot{padding:14px;border-top:1px solid var(--border)}
+.user-card{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;background:var(--bg3);cursor:pointer;transition:background .15s}
+.user-card:hover{background:var(--bgh)}
+.avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.u-name{font-size:12px;font-weight:600}
+.u-role{font-size:10px;color:var(--t2)}
+
+/* ─ MAIN ─ */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:56px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0}
+.page-title{font-size:15px;font-weight:600;flex:1}
+.search-box{display:flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12px;color:var(--t2);min-width:160px}
+.search-box input{background:none;border:none;outline:none;color:var(--t1);font-size:12px;font-family:inherit;width:100%}
+.search-box input::placeholder{color:var(--t2)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:inherit}
+.btn-primary{background:var(--accent);color:#0d1117}
+.btn-primary:hover{background:#79b8ff}
+.btn-danger{background:rgba(247,129,102,.15);color:var(--red);border:1px solid rgba(247,129,102,.3)}
+.btn-danger:hover{background:rgba(247,129,102,.25)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.content{flex:1;overflow-y:auto;padding:24px}
+
+/* ─ PAGES ─ */
+.page{display:none}
+.page.active{display:block;animation:fadeUp .3s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ─ STATS ─ */
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px;cursor:pointer;transition:border-color .2s,transform .2s}
+.stat-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.stat-label{font-size:11px;color:var(--t2);margin-bottom:8px}
+.stat-val{font-size:26px;font-weight:700;letter-spacing:-0.5px}
+.stat-sub{font-size:11px;color:var(--t2);margin-top:4px}
+
+/* ─ TABLE CARD ─ */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.card-title{font-size:14px;font-weight:600}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 16px;font-size:10px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap}
+td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--t2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bgh)}
+.td-main{color:var(--t1);font-weight:500}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:600}
+.badge-green{background:rgba(63,185,80,.12);color:var(--green)}
+.badge-blue{background:rgba(88,166,255,.12);color:var(--accent)}
+.badge-orange{background:rgba(255,166,87,.12);color:var(--orange)}
+.badge-red{background:rgba(247,129,102,.12);color:var(--red)}
+.badge-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+.td-actions{display:flex;gap:6px}
+
+/* ─ EMPTY STATE ─ */
+.empty{text-align:center;padding:48px 20px;color:var(--t2)}
+.empty-icon{font-size:40px;margin-bottom:12px;opacity:.5}
+.empty-text{font-size:14px}
+
+/* ─ MODAL ─ */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px)}
+.modal-bg.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .25s ease}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border)}
+.modal-title{font-size:15px;font-weight:600}
+.modal-close{cursor:pointer;color:var(--t2);font-size:18px;line-height:1;padding:2px 6px;border-radius:4px}
+.modal-close:hover{background:var(--bgh);color:var(--t1)}
+.modal-body{padding:20px}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:12px;font-weight:500;color:var(--t2);margin-bottom:6px}
+.form-input,.form-select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 12px;color:var(--t1);font-size:13px;font-family:inherit;outline:none;transition:border-color .15s}
+.form-input:focus,.form-select:focus{border-color:var(--accent)}
+.form-select option{background:var(--bg2)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 20px;border-top:1px solid var(--border)}
+
+/* ─ TOAST ─ */
+.toast-wrap{position:fixed;top:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:9999}
+.toast{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--t1);box-shadow:0 8px 32px rgba(0,0,0,.4);animation:slideIn .3s ease;display:flex;align-items:center;gap:8px}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+/* ─ API CONFIG ─ */
+.api-banner{background:rgba(255,166,87,.08);border:1px solid rgba(255,166,87,.3);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px}
+.api-banner-text{flex:1;font-size:13px;color:var(--orange)}
+.api-banner-text strong{display:block;margin-bottom:4px}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div class="logo-text">管理後台</div>
+      <div class="logo-sub">Admin Console</div>
+    </div>
+  </div>
+  <nav>
+    <div class="nav-group">主選單</div>
+    <div class="nav-item active" onclick="showPage('orders',this)"><span class="nav-icon">📦</span>訂單管理</div>
+    <div class="nav-item" onclick="showPage('users',this)"><span class="nav-icon">👥</span>用戶管理</div>
+    <div class="nav-item" onclick="showPage('products',this)"><span class="nav-icon">🛒</span>商品庫存</div>
+    <div class="nav-group">系統</div>
+    <div class="nav-item" onclick="showPage('settings',this)"><span class="nav-icon">⚙️</span>API 設定</div>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="user-card">
+      <div class="avatar">管</div>
+      <div>
+        <div class="u-name">管理員</div>
+        <div class="u-role">超級管理員</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <header class="topbar">
+    <div class="page-title" id="pageTitle">訂單管理</div>
+    <div class="search-box">🔍&nbsp;<input type="text" id="searchInput" placeholder="搜尋..." oninput="onSearch()"></div>
+    <button class="btn btn-primary" onclick="openAddModal()">＋ 新增</button>
+  </header>
+
+  <div class="content">
+
+    <!-- ── 訂單管理 ── -->
+    <div class="page active" id="page-orders">
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">訂單總數</div><div class="stat-val" id="s-order-total">—</div><div class="stat-sub">全部訂單</div></div>
+        <div class="stat-card"><div class="stat-label">待出貨</div><div class="stat-val" id="s-order-pending" style="color:var(--orange)">—</div><div class="stat-sub">需要處理</div></div>
+        <div class="stat-card"><div class="stat-label">已完成</div><div class="stat-val" id="s-order-done" style="color:var(--green)">—</div><div class="stat-sub">本月</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">訂單列表</span><span id="orders-count" style="font-size:12px;color:var(--t2)"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>訂單編號</th><th>客戶名稱</th><th>金額</th><th>狀態</th><th>備註</th><th>建立時間</th><th>操作</th></tr></thead>
+            <tbody id="orders-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 用戶管理 ── -->
+    <div class="page" id="page-users">
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">用戶總數</div><div class="stat-val" id="s-user-total">—</div><div class="stat-sub">全部用戶</div></div>
+        <div class="stat-card"><div class="stat-label">啟用中</div><div class="stat-val" id="s-user-active" style="color:var(--green)">—</div><div class="stat-sub">正常狀態</div></div>
+        <div class="stat-card"><div class="stat-label">管理員</div><div class="stat-val" id="s-user-admin" style="color:var(--purple)">—</div><div class="stat-sub">管理員帳號</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">用戶列表</span><span id="users-count" style="font-size:12px;color:var(--t2)"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>用戶ID</th><th>姓名</th><th>Email</th><th>電話</th><th>角色</th><th>狀態</th><th>建立時間</th><th>操作</th></tr></thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 商品庫存 ── -->
+    <div class="page" id="page-products">
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">商品總數</div><div class="stat-val" id="s-prod-total">—</div><div class="stat-sub">全部商品</div></div>
+        <div class="stat-card"><div class="stat-label">低庫存警示</div><div class="stat-val" id="s-prod-low" style="color:var(--red)">—</div><div class="stat-sub">庫存 &lt; 10</div></div>
+        <div class="stat-card"><div class="stat-label">上架中</div><div class="stat-val" id="s-prod-active" style="color:var(--green)">—</div><div class="stat-sub">販售中</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">商品列表</span><span id="products-count" style="font-size:12px;color:var(--t2)"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>商品ID</th><th>商品名稱</th><th>價格</th><th>庫存</th><th>類別</th><th>狀態</th><th>建立時間</th><th>操作</th></tr></thead>
+            <tbody id="products-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── API 設定 ── -->
+    <div class="page" id="page-settings">
+      <div class="card" style="max-width:560px">
+        <div class="card-head"><span class="card-title">⚙️ Google Sheets API 設定</span></div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+          <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);border-radius:8px;padding:14px;font-size:13px;color:var(--t2);line-height:1.8">
+            📋 <strong style="color:var(--t1)">步驟說明：</strong><br>
+            1. 開啟 Google Sheets → 「擴充功能」→「Apps Script」<br>
+            2. 貼上 <code style="color:var(--accent)">google-apps-script.js</code> 的內容<br>
+            3. 點「部署」→「新增部署作業」→「網頁應用程式」<br>
+            4. 執行身分選「我」，存取權選「所有人」<br>
+            5. 複製部署網址，貼到下方並儲存
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Apps Script 部署網址</label>
+            <input class="form-input" id="apiUrlInput" type="text" placeholder="https://script.google.com/macros/s/...">
+          </div>
+          <button class="btn btn-primary" onclick="saveApiUrl()">💾 儲存並連線</button>
+          <div id="api-status" style="font-size:12px;color:var(--t2)"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- MODAL -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="modal-title">新增</span>
+      <span class="modal-close" onclick="closeModal()">✕</span>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn" style="background:var(--bg3);color:var(--t1)" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitModal()">確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+// ══════════════════════════════════════
+//  設定區：貼上你的 Apps Script 網址
+// ══════════════════════════════════════
+let API_URL = localStorage.getItem('adminApiUrl') || '';
+
+const PAGES = {
+  orders:   { title:'訂單管理', sheet:'訂單' },
+  users:    { title:'用戶管理', sheet:'用戶' },
+  products: { title:'商品庫存', sheet:'商品' },
+  settings: { title:'API 設定', sheet:null }
+};
+
+let currentPage = 'orders';
+let currentData = [];
+let editRow     = null;
+
+// ── 頁面切換 ──
+function showPage(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('pageTitle').textContent = PAGES[page].title;
+  document.getElementById('searchInput').value = '';
+  currentPage = page;
+  if (page !== 'settings') loadData(page);
+  else loadSettings();
+}
+
+// ── 讀取設定頁 ──
+function loadSettings() {
+  document.getElementById('apiUrlInput').value = API_URL;
+}
+
+function saveApiUrl() {
+  const url = document.getElementById('apiUrlInput').value.trim();
+  if (!url) { toast('請輸入 API 網址', 'error'); return; }
+  API_URL = url;
+  localStorage.setItem('adminApiUrl', url);
+  document.getElementById('api-status').innerHTML = '<span style="color:var(--green)">✅ 已儲存！重新整理頁面後請點選單頁面測試連線。</span>';
+  toast('API 網址已儲存', 'success');
+}
+
+// ── API 呼叫 ──
+async function api(action, sheet, body = null) {
+  if (!API_URL) {
+    toast('請先到「API 設定」頁面填入 Apps Script 網址！', 'error');
+    throw new Error('no api url');
+  }
+  const url = `${API_URL}?action=${action}&sheet=${encodeURIComponent(sheet)}`;
+  const opts = body
+    ? { method:'POST', body: JSON.stringify(body) }
+    : { method:'GET' };
+  const res = await fetch(url, opts);
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json;
+}
+
+// ── 讀取資料 ──
+async function loadData(page) {
+  const sheet = PAGES[page].sheet;
+  try {
+    const res = await api('getAll', sheet);
+    currentData = res.data || [];
+    renderTable(page, currentData);
+    updateStats(page, currentData);
+  } catch(e) {
+    currentData = [];
+    renderTable(page, []);
+    if (e.message !== 'no api url') toast('載入失敗：' + e.message, 'error');
+  }
+}
+
+// ── 搜尋 ──
+function onSearch() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = currentData.filter(row =>
+    Object.values(row).some(v => String(v).toLowerCase().includes(q))
+  );
+  renderTable(currentPage, filtered);
+}
+
+// ── 更新統計數字 ──
+function updateStats(page, data) {
+  if (page === 'orders') {
+    document.getElementById('s-order-total').textContent   = data.length;
+    document.getElementById('s-order-pending').textContent = data.filter(r=>r['狀態']==='待出貨').length;
+    document.getElementById('s-order-done').textContent    = data.filter(r=>r['狀態']==='已完成').length;
+  } else if (page === 'users') {
+    document.getElementById('s-user-total').textContent  = data.length;
+    document.getElementById('s-user-active').textContent = data.filter(r=>r['狀態']==='啟用').length;
+    document.getElementById('s-user-admin').textContent  = data.filter(r=>r['角色']==='管理員').length;
+  } else if (page === 'products') {
+    document.getElementById('s-prod-total').textContent  = data.length;
+    document.getElementById('s-prod-low').textContent    = data.filter(r=>Number(r['庫存數量'])<10).length;
+    document.getElementById('s-prod-active').textContent = data.filter(r=>r['狀態']==='上架').length;
+  }
+}
+
+// ── 渲染表格 ──
+function renderTable(page, data) {
+  const countEl = document.getElementById(page + '-count');
+  if (countEl) countEl.textContent = `共 ${data.length} 筆`;
+  const tbody = document.getElementById(page + '-tbody');
+  if (!tbody) return;
+
+  if (!data.length) {
+    const cols = { orders:7, users:8, products:8 };
+    tbody.innerHTML = `<tr><td colspan="${cols[page]||6}"><div class="empty"><div class="empty-icon">📭</div><div class="empty-text">尚無資料<br><small style="font-size:11px;color:var(--t3)">請先到「API 設定」填入 Apps Script 網址，或點右上角「＋ 新增」加入資料</small></div></div></td></tr>`;
+    return;
+  }
+
+  if (page === 'orders') {
+    tbody.innerHTML = data.map(r => `
+      <tr>
+        <td class="td-main">${r['訂單編號']||'—'}</td>
+        <td>${r['客戶名稱']||'—'}</td>
+        <td>$${Number(r['金額']||0).toLocaleString()}</td>
+        <td>${statusBadge(r['狀態'])}</td>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r['備註']||'—'}</td>
+        <td>${r['建立時間']||'—'}</td>
+        <td><div class="td-actions">
+          <button class="btn btn-sm btn-primary" onclick='openEditModal(${JSON.stringify(r)})'>編輯</button>
+          <button class="btn btn-sm btn-danger" onclick="confirmDelete(${r._row})">刪除</button>
+        </div></td>
+      </tr>`).join('');
+  } else if (page === 'users') {
+    tbody.innerHTML = data.map(r => `
+      <tr>
+        <td class="td-main">${r['用戶ID']||'—'}</td>
+        <td>${r['姓名']||'—'}</td>
+        <td>${r['Email']||'—'}</td>
+        <td>${r['電話']||'—'}</td>
+        <td>${r['角色']||'—'}</td>
+        <td>${statusBadge(r['狀態'])}</td>
+        <td>${r['建立時間']||'—'}</td>
+        <td><div class="td-actions">
+          <button class="btn btn-sm btn-primary" onclick='openEditModal(${JSON.stringify(r)})'>編輯</button>
+          <button class="btn btn-sm btn-danger" onclick="confirmDelete(${r._row})">刪除</button>
+        </div></td>
+      </tr>`).join('');
+  } else if (page === 'products') {
+    tbody.innerHTML = data.map(r => `
+      <tr>
+        <td class="td-main">${r['商品ID']||'—'}</td>
+        <td>${r['商品名稱']||'—'}</td>
+        <td>$${Number(r['價格']||0).toLocaleString()}</td>
+        <td style="color:${Number(r['庫存數量'])<10?'var(--red)':'inherit'}">${r['庫存數量']||0}</td>
+        <td>${r['類別']||'—'}</td>
+        <td>${statusBadge(r['狀態'])}</td>
+        <td>${r['建立時間']||'—'}</td>
+        <td><div class="td-actions">
+          <button class="btn btn-sm btn-primary" onclick='openEditModal(${JSON.stringify(r)})'>編輯</button>
+          <button class="btn btn-sm btn-danger" onclick="confirmDelete(${r._row})">刪除</button>
+        </div></td>
+      </tr>`).join('');
+  }
+}
+
+function statusBadge(s) {
+  const map = {
+    '已完成':'badge-green','完成':'badge-green','啟用':'badge-green','上架':'badge-green',
+    '處理中':'badge-blue','待出貨':'badge-orange','待付款':'badge-orange',
+    '已取消':'badge-red','停用':'badge-red','下架':'badge-red','管理員':'badge-blue',
+    '一般用戶':'badge-blue'
+  };
+  const cls = map[s] || 'badge-blue';
+  return `<span class="badge ${cls}"><span class="badge-dot"></span>${s||'—'}</span>`;
+}
+
+// ── 新增 Modal ──
+function openAddModal() {
+  editRow = null;
+  document.getElementById('modal-title').textContent = '＋ 新增' + PAGES[currentPage].title.replace('管理','').replace('庫存','');
+  document.getElementById('modal-body').innerHTML = buildForm(currentPage, null);
+  document.getElementById('modal').classList.add('open');
+}
+
+function openEditModal(row) {
+  editRow = row;
+  document.getElementById('modal-title').textContent = '✏️ 編輯';
+  document.getElementById('modal-body').innerHTML = buildForm(currentPage, row);
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+function buildForm(page, data) {
+  const v = k => data ? (data[k]||'') : '';
+  if (page === 'orders') return `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">客戶名稱</label><input class="form-input" id="f-客戶名稱" value="${v('客戶名稱')}" placeholder="王小明"></div>
+      <div class="form-group"><label class="form-label">金額</label><input class="form-input" id="f-金額" type="number" value="${v('金額')}" placeholder="0"></div>
+    </div>
+    <div class="form-group"><label class="form-label">狀態</label>
+      <select class="form-select" id="f-狀態">
+        ${['待付款','處理中','待出貨','已完成','已取消'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">備註</label><input class="form-input" id="f-備註" value="${v('備註')}" placeholder="選填"></div>`;
+
+  if (page === 'users') return `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">姓名</label><input class="form-input" id="f-姓名" value="${v('姓名')}" placeholder="王小明"></div>
+      <div class="form-group"><label class="form-label">電話</label><input class="form-input" id="f-電話" value="${v('電話')}" placeholder="0912-345-678"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="f-Email" type="email" value="${v('Email')}" placeholder="example@email.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">角色</label>
+        <select class="form-select" id="f-角色">
+          ${['一般用戶','管理員','編輯者','檢視者'].map(s=>`<option ${v('角色')===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">狀態</label>
+        <select class="form-select" id="f-狀態">
+          ${['啟用','停用'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+
+  if (page === 'products') return `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">商品名稱</label><input class="form-input" id="f-商品名稱" value="${v('商品名稱')}" placeholder="商品名稱"></div>
+      <div class="form-group"><label class="form-label">類別</label><input class="form-input" id="f-類別" value="${v('類別')}" placeholder="電子產品"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">價格</label><input class="form-input" id="f-價格" type="number" value="${v('價格')}" placeholder="0"></div>
+      <div class="form-group"><label class="form-label">庫存數量</label><input class="form-input" id="f-庫存數量" type="number" value="${v('庫存數量')}" placeholder="0"></div>
+    </div>
+    <div class="form-group"><label class="form-label">狀態</label>
+      <select class="form-select" id="f-狀態">
+        ${['上架','下架'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+// ── 送出 Modal ──
+async function submitModal() {
+  const sheet = PAGES[currentPage].sheet;
+  const fields = document.querySelectorAll('#modal-body [id^="f-"]');
+  const body = editRow ? {...editRow} : {};
+  fields.forEach(f => { body[f.id.replace('f-','')] = f.value; });
+
+  try {
+    if (editRow) {
+      await api('update', sheet, body);
+      toast('已成功更新！', 'success');
+    } else {
+      await api('add', sheet, body);
+      toast('已成功新增！', 'success');
+    }
+    closeModal();
+    loadData(currentPage);
+  } catch(e) {
+    toast('操作失敗：' + e.message, 'error');
+  }
+}
+
+// ── 刪除確認 ──
+function confirmDelete(rowNum) {
+  if (!confirm('確定要刪除這筆資料嗎？此操作無法復原。')) return;
+  deleteRow(rowNum);
+}
+
+async function deleteRow(rowNum) {
+  const sheet = PAGES[currentPage].sheet;
+  try {
+    await api('delete', sheet, { id: rowNum });
+    toast('已刪除', 'success');
+    loadData(currentPage);
+  } catch(e) {
+    toast('刪除失敗：' + e.message, 'error');
+  }
+}
+
+// ── Toast 通知 ──
+function toast(msg, type='success') {
+  const wrap = document.getElementById('toasts');
+  const el   = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = (type==='success'?'✅ ':'❌ ') + msg;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── 關閉 Modal 點背景 ──
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target.id === 'modal') closeModal();
+});
+
+// ── 初始化 ──
+window.onload = () => {
+  if (!API_URL) {
+    toast('請先到「API 設定」填入 Apps Script 網址', 'error');
+  } else {
+    loadData('orders');
+  }
+};
+</script>
+</body>
+</html>
