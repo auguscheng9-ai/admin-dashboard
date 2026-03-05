@@ -15,6 +15,19 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--t1);display:flex;height:100vh;overflow:hidden}
 
+/* ─ LOGIN ─ */
+.login-wrap{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999}
+.login-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:360px;text-align:center;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.login-icon{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 20px}
+.login-title{font-size:20px;font-weight:700;margin-bottom:6px}
+.login-sub{font-size:13px;color:var(--t2);margin-bottom:28px}
+.login-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--t1);font-size:14px;font-family:inherit;outline:none;transition:border-color .15s;text-align:center;letter-spacing:3px;margin-bottom:14px}
+.login-input:focus{border-color:var(--accent)}
+.login-btn{width:100%;padding:11px;border-radius:8px;background:var(--accent);color:#0d1117;font-size:14px;font-weight:700;font-family:inherit;border:none;cursor:pointer;transition:background .15s}
+.login-btn:hover{background:#79b8ff}
+.login-error{font-size:12px;color:var(--red);margin-top:10px;min-height:18px}
+.login-hint{font-size:11px;color:var(--t3);margin-top:16px}
+
 /* ─ SIDEBAR ─ */
 .sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .logo{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
@@ -122,6 +135,19 @@ tr:hover td{background:var(--bgh)}
 </style>
 </head>
 <body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-box">
+    <div class="login-icon">🔐</div>
+    <div class="login-title">後台管理系統</div>
+    <div class="login-sub">請輸入密碼以繼續</div>
+    <input class="login-input" id="pwdInput" type="password" placeholder="• • • • • • • •" onkeydown="if(event.key==='Enter')checkLogin()">
+    <button class="login-btn" onclick="checkLogin()">進入後台</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-hint">忘記密碼請聯絡管理員</div>
+  </div>
+</div>
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
@@ -260,6 +286,26 @@ tr:hover td{background:var(--bgh)}
 <div class="toast-wrap" id="toasts"></div>
 
 <script>
+// ══════════════════════════════════════
+//  🔐 密碼設定區（改這裡換密碼）
+// ══════════════════════════════════════
+const ADMIN_PASSWORD = '!@#123Abc';  // ← 改成你想要的密碼
+
+function checkLogin() {
+  const pwd = document.getElementById('pwdInput').value;
+  const err = document.getElementById('loginError');
+  if (pwd === ADMIN_PASSWORD) {
+    document.getElementById('loginWrap').style.display = 'none';
+    if (!API_URL) toast('請先到「API 設定」填入 Apps Script 網址！', 'error');
+    else loadData('orders');
+  } else {
+    err.textContent = '❌ 密碼錯誤，請再試一次';
+    document.getElementById('pwdInput').value = '';
+    document.getElementById('pwdInput').focus();
+    setTimeout(() => err.textContent = '', 3000);
+  }
+}
+
 // ══════════════════════════════════════
 //  設定區：貼上你的 Apps Script 網址
 // ══════════════════════════════════════
@@ -555,11 +601,7 @@ document.getElementById('modal').addEventListener('click', e => {
 
 // ── 初始化 ──
 window.onload = () => {
-  if (!API_URL) {
-    toast('請先到「API 設定」填入 Apps Script 網址', 'error');
-  } else {
-    loadData('orders');
-  }
+  document.getElementById('pwdInput').focus();
 };
 </script>
 </body>
