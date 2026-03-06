@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>後台管理系統</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script type="module">
-// ══════════════════════════════════════
-//  Firebase 設定（你的專案設定）
-// ══════════════════════════════════════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -28,284 +26,272 @@ const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
-// ── 狀態 ──
 let currentPage = 'orders';
 let currentData = [];
-let editId      = null;
+let editId = null;
+let allOrders = [], allUsers = [], allProducts = [];
+let chartRevenue = null, chartStatus = null;
 
 const PAGES = {
-  orders:   { title:'訂單管理',  col:'orders' },
-  users:    { title:'用戶管理',  col:'users' },
-  products: { title:'商品庫存',  col:'products' }
+  orders:   { title:'訂單管理', col:'orders' },
+  users:    { title:'用戶管理', col:'users' },
+  products: { title:'商品庫存', col:'products' },
+  report:   { title:'報表總覽', col:null }
 };
 
-// ── 登入狀態監聽 ──
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   if (user) {
     document.getElementById('loginWrap').style.display = 'none';
-    document.getElementById('appWrap').style.display   = 'flex';
-    document.getElementById('userEmail').textContent   = user.email;
+    document.getElementById('appWrap').style.display = 'flex';
+    document.getElementById('userEmail').textContent = user.email;
+    await fetchAll();
     loadData('orders');
   } else {
     document.getElementById('loginWrap').style.display = 'flex';
-    document.getElementById('appWrap').style.display   = 'none';
+    document.getElementById('appWrap').style.display = 'none';
   }
 });
 
-// ── 登入 ──
-window.doLogin = async () => {
-  const email = document.getElementById('emailInput').value.trim();
-  const pwd   = document.getElementById('pwdInput').value;
-  const err   = document.getElementById('loginError');
-  const btn   = document.getElementById('loginBtn');
-  if (!email || !pwd) { err.textContent = '請填寫帳號和密碼'; return; }
-  btn.textContent = '登入中...';
-  btn.disabled = true;
+async function fetchAll() {
   try {
-    await signInWithEmailAndPassword(auth, email, pwd);
-  } catch(e) {
-    const msgs = {
-      'auth/invalid-credential': '帳號或密碼錯誤',
-      'auth/user-not-found':     '帳號不存在',
-      'auth/wrong-password':     '密碼錯誤',
-      'auth/too-many-requests':  '嘗試太多次，請稍後再試'
-    };
-    err.textContent = '❌ ' + (msgs[e.code] || '登入失敗：' + e.message);
-    btn.textContent = '登入';
-    btn.disabled = false;
+    const [os,us,ps] = await Promise.all([
+      getDocs(query(collection(db,'orders'),   orderBy('createdAt','desc'))),
+      getDocs(query(collection(db,'users'),    orderBy('createdAt','desc'))),
+      getDocs(query(collection(db,'products'), orderBy('createdAt','desc')))
+    ]);
+    allOrders   = os.docs.map(d=>({id:d.id,...d.data()}));
+    allUsers    = us.docs.map(d=>({id:d.id,...d.data()}));
+    allProducts = ps.docs.map(d=>({id:d.id,...d.data()}));
+  } catch(e) { allOrders=[];allUsers=[];allProducts=[]; }
+}
+
+window.doLogin = async () => {
+  const email=document.getElementById('emailInput').value.trim();
+  const pwd=document.getElementById('pwdInput').value;
+  const err=document.getElementById('loginError');
+  const btn=document.getElementById('loginBtn');
+  if(!email||!pwd){err.textContent='請填寫帳號和密碼';return;}
+  btn.textContent='登入中...';btn.disabled=true;
+  try { await signInWithEmailAndPassword(auth,email,pwd); }
+  catch(e) {
+    const m={'auth/invalid-credential':'帳號或密碼錯誤','auth/too-many-requests':'嘗試太多次，請稍後'};
+    err.textContent='❌ '+(m[e.code]||'登入失敗');
+    btn.textContent='登入';btn.disabled=false;
   }
 };
+window.doLogout = async()=>{await signOut(auth);toast('已登出','success');};
+window.loginKeydown = e=>{if(e.key==='Enter')window.doLogin();};
 
-// ── 登出 ──
-window.doLogout = async () => {
-  await signOut(auth);
-  toast('已登出', 'success');
-};
-
-// ── Enter 鍵登入 ──
-window.loginKeydown = (e) => { if (e.key === 'Enter') window.doLogin(); };
-
-// ── 頁面切換 ──
-window.showPage = (page, el) => {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
+window.showPage = async(page,el)=>{
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
   el.classList.add('active');
-  document.getElementById('pageTitle').textContent = PAGES[page].title;
-  document.getElementById('searchInput').value = '';
-  currentPage = page;
-  loadData(page);
+  document.getElementById('pageTitle').textContent=PAGES[page].title;
+  document.getElementById('searchInput').value='';
+  document.getElementById('addBtn').style.display=page==='report'?'none':'';
+  currentPage=page;
+  if(page==='report'){await fetchAll();renderReport();}
+  else loadData(page);
 };
 
-// ── 讀取資料 ──
-window.loadData = async (page) => {
-  const colName = PAGES[page].col;
+window.loadData = async(page)=>{
   showLoading(page);
   try {
-    const q    = query(collection(db, colName), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    currentData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch(e) {
-    // 若還沒有資料，回傳空陣列
-    currentData = [];
-  }
-  renderTable(page, currentData);
-  updateStats(page, currentData);
+    const snap=await getDocs(query(collection(db,PAGES[page].col),orderBy('createdAt','desc')));
+    currentData=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(page==='orders')   allOrders=currentData;
+    if(page==='users')    allUsers=currentData;
+    if(page==='products') allProducts=currentData;
+  } catch(e){currentData=[];}
+  renderTable(page,currentData);
+  updateStats(page,currentData);
 };
 
-// ── 搜尋 ──
-window.onSearch = () => {
-  const q = document.getElementById('searchInput').value.toLowerCase();
-  const filtered = currentData.filter(row =>
-    Object.values(row).some(v => String(v).toLowerCase().includes(q))
-  );
-  renderTable(currentPage, filtered);
+window.onSearch=()=>{
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  renderTable(currentPage,currentData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(q))));
 };
 
-// ── 新增 ──
-window.openAddModal = () => {
-  editId = null;
-  document.getElementById('modal-title').textContent = '＋ 新增';
-  document.getElementById('modal-body').innerHTML = buildForm(currentPage, null);
-  document.getElementById('modal').classList.add('open');
-};
+// ══ 報表 ══
+function renderReport(){
+  // 月營收
+  const mm={};
+  allOrders.forEach(o=>{
+    if(o.狀態==='已取消')return;
+    const ts=o.createdAt?.toDate?o.createdAt.toDate():new Date();
+    const k=`${ts.getFullYear()}/${String(ts.getMonth()+1).padStart(2,'0')}`;
+    mm[k]=(mm[k]||0)+Number(o.金額||0);
+  });
+  const months=Object.keys(mm).sort();
+  const amounts=months.map(m=>mm[m]);
 
-// ── 編輯 ──
-window.openEditModal = (id) => {
-  const row = currentData.find(r => r.id === id);
-  if (!row) return;
-  editId = id;
-  document.getElementById('modal-title').textContent = '✏️ 編輯';
-  document.getElementById('modal-body').innerHTML = buildForm(currentPage, row);
-  document.getElementById('modal').classList.add('open');
-};
+  // 狀態分布
+  const sm={};
+  allOrders.forEach(o=>{sm[o.狀態||'未知']=(sm[o.狀態||'未知']||0)+1;});
 
-// ── 關閉 Modal ──
-window.closeModal = () => document.getElementById('modal').classList.remove('open');
+  // 低庫存
+  const low=allProducts.filter(p=>Number(p.庫存數量||0)<10).sort((a,b)=>Number(a.庫存數量)-Number(b.庫存數量));
 
-// ── 送出 ──
-window.submitModal = async () => {
-  const colName = PAGES[currentPage].col;
-  const fields  = document.querySelectorAll('#modal-body [id^="f-"]');
-  const data    = {};
-  fields.forEach(f => { data[f.id.replace('f-','')] = f.value; });
+  // 數字
+  const totalRev=allOrders.filter(o=>o.狀態==='已完成').reduce((s,o)=>s+Number(o.金額||0),0);
+  document.getElementById('r-rev').textContent='$'+totalRev.toLocaleString();
+  document.getElementById('r-orders').textContent=allOrders.length;
+  document.getElementById('r-users').textContent=allUsers.length;
+  document.getElementById('r-low').textContent=low.length;
 
-  try {
-    if (editId) {
-      await updateDoc(doc(db, colName, editId), { ...data, updatedAt: serverTimestamp() });
-      toast('更新成功！', 'success');
-    } else {
-      await addDoc(collection(db, colName), { ...data, createdAt: serverTimestamp() });
-      toast('新增成功！', 'success');
-    }
-    closeModal();
-    loadData(currentPage);
-  } catch(e) {
-    toast('操作失敗：' + e.message, 'error');
-  }
-};
+  // 折線圖
+  if(chartRevenue)chartRevenue.destroy();
+  chartRevenue=new Chart(document.getElementById('chartRevenue'),{
+    type:'line',
+    data:{
+      labels:months.length?months:['尚無資料'],
+      datasets:[{label:'月營收',data:amounts.length?amounts:[0],borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,.1)',borderWidth:2,pointRadius:5,pointBackgroundColor:'#58a6ff',tension:.4,fill:true}]
+    },
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{
+      x:{grid:{color:'#30363d'},ticks:{color:'#8b949e'}},
+      y:{grid:{color:'#30363d'},ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toLocaleString()}}
+    }}
+  });
 
-// ── 刪除 ──
-window.confirmDelete = (id) => {
-  if (!confirm('確定要刪除這筆資料嗎？此操作無法復原。')) return;
-  deleteRecord(id);
-};
+  // 圓餅圖
+  if(chartStatus)chartStatus.destroy();
+  const sl=Object.keys(sm);
+  chartStatus=new Chart(document.getElementById('chartStatus'),{
+    type:'doughnut',
+    data:{
+      labels:sl.length?sl:['尚無資料'],
+      datasets:[{data:sl.length?sl.map(k=>sm[k]):[1],backgroundColor:['#3fb950','#58a6ff','#ffa657','#f78166','#d2a8ff'],borderWidth:0,hoverOffset:6}]
+    },
+    options:{responsive:true,cutout:'62%',plugins:{legend:{position:'bottom',labels:{color:'#8b949e',padding:14,font:{size:11}}}}}
+  });
 
-async function deleteRecord(id) {
-  const colName = PAGES[currentPage].col;
-  try {
-    await deleteDoc(doc(db, colName, id));
-    toast('已刪除', 'success');
-    loadData(currentPage);
-  } catch(e) {
-    toast('刪除失敗：' + e.message, 'error');
-  }
-}
-
-// ── 統計 ──
-function updateStats(page, data) {
-  if (page === 'orders') {
-    document.getElementById('s-order-total').textContent   = data.length;
-    document.getElementById('s-order-pending').textContent = data.filter(r=>r.狀態==='待出貨').length;
-    document.getElementById('s-order-done').textContent    = data.filter(r=>r.狀態==='已完成').length;
-  } else if (page === 'users') {
-    document.getElementById('s-user-total').textContent  = data.length;
-    document.getElementById('s-user-active').textContent = data.filter(r=>r.狀態==='啟用').length;
-    document.getElementById('s-user-admin').textContent  = data.filter(r=>r.角色==='管理員').length;
-  } else if (page === 'products') {
-    document.getElementById('s-prod-total').textContent  = data.length;
-    document.getElementById('s-prod-low').textContent    = data.filter(r=>Number(r.庫存數量)<10).length;
-    document.getElementById('s-prod-active').textContent = data.filter(r=>r.狀態==='上架').length;
-  }
-}
-
-// ── Loading ──
-function showLoading(page) {
-  const tbody = document.getElementById(page + '-tbody');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--t2)">⏳ 載入中...</td></tr>`;
-}
-
-// ── 渲染表格 ──
-function renderTable(page, data) {
-  const countEl = document.getElementById(page + '-count');
-  if (countEl) countEl.textContent = `共 ${data.length} 筆`;
-  const tbody = document.getElementById(page + '-tbody');
-  if (!tbody) return;
-
-  if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📭</div><div class="empty-text">尚無資料，點右上角「＋ 新增」加入</div></div></td></tr>`;
-    return;
-  }
-
-  const fmt = (ts) => {
-    if (!ts) return '—';
-    if (ts.toDate) return ts.toDate().toLocaleString('zh-TW');
-    return ts;
-  };
-
-  if (page === 'orders') {
-    tbody.innerHTML = data.map(r => `
-      <tr>
-        <td class="td-main">${r.訂單編號||'—'}</td>
-        <td>${r.客戶名稱||'—'}</td>
-        <td>$${Number(r.金額||0).toLocaleString()}</td>
-        <td>${statusBadge(r.狀態)}</td>
-        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.備註||'—'}</td>
-        <td>${fmt(r.createdAt)}</td>
-        <td><div class="td-actions">
-          <button class="btn btn-sm btn-primary" onclick="openEditModal('${r.id}')">編輯</button>
-          <button class="btn btn-sm btn-danger" onclick="confirmDelete('${r.id}')">刪除</button>
-        </div></td>
+  // 庫存警示表
+  const tbody=document.getElementById('low-stock-tbody');
+  tbody.innerHTML=!low.length
+    ?'<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--green)">✅ 目前沒有低庫存商品</td></tr>'
+    :low.map(p=>`<tr>
+        <td class="td-main">${p.商品名稱||'—'}</td>
+        <td style="color:${Number(p.庫存數量)<5?'var(--red)':'var(--orange)'};font-weight:700">${p.庫存數量}</td>
+        <td>${p.類別||'—'}</td>
+        <td>${Number(p.庫存數量)<5?'<span class="badge badge-red"><span class="badge-dot"></span>緊急補貨</span>':'<span class="badge badge-orange"><span class="badge-dot"></span>庫存偏低</span>'}</td>
       </tr>`).join('');
-  } else if (page === 'users') {
-    tbody.innerHTML = data.map(r => `
-      <tr>
-        <td class="td-main">${r.姓名||'—'}</td>
-        <td>${r.Email||'—'}</td>
-        <td>${r.電話||'—'}</td>
-        <td>${r.角色||'—'}</td>
-        <td>${statusBadge(r.狀態)}</td>
-        <td>${fmt(r.createdAt)}</td>
-        <td><div class="td-actions">
-          <button class="btn btn-sm btn-primary" onclick="openEditModal('${r.id}')">編輯</button>
-          <button class="btn btn-sm btn-danger" onclick="confirmDelete('${r.id}')">刪除</button>
-        </div></td>
-      </tr>`).join('');
-  } else if (page === 'products') {
-    tbody.innerHTML = data.map(r => `
-      <tr>
-        <td class="td-main">${r.商品名稱||'—'}</td>
-        <td>$${Number(r.價格||0).toLocaleString()}</td>
-        <td style="color:${Number(r.庫存數量)<10?'var(--red)':'inherit'}">${r.庫存數量||0}</td>
-        <td>${r.類別||'—'}</td>
-        <td>${statusBadge(r.狀態)}</td>
-        <td>${fmt(r.createdAt)}</td>
-        <td><div class="td-actions">
-          <button class="btn btn-sm btn-primary" onclick="openEditModal('${r.id}')">編輯</button>
-          <button class="btn btn-sm btn-danger" onclick="confirmDelete('${r.id}')">刪除</button>
-        </div></td>
-      </tr>`).join('');
+}
+
+// ══ CSV 匯出 ══
+window.exportCSV=(type)=>{
+  const data=type==='orders'?allOrders:type==='users'?allUsers:allProducts;
+  if(!data.length){toast('沒有資料可匯出','error');return;}
+  const keys=Object.keys(data[0]).filter(k=>k!=='id'&&k!=='createdAt'&&k!=='updatedAt');
+  const fmtv=v=>v?.toDate?v.toDate().toLocaleString('zh-TW'):(v||'');
+  const rows=[keys,...data.map(r=>keys.map(k=>fmtv(r[k])))];
+  const csv='\uFEFF'+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=`${type}_${new Date().toLocaleDateString('zh-TW').replace(/\//g,'-')}.csv`;
+  a.click();
+  toast('CSV 匯出成功！','success');
+};
+
+window.openAddModal=()=>{editId=null;document.getElementById('modal-title').textContent='＋ 新增';document.getElementById('modal-body').innerHTML=buildForm(currentPage,null);document.getElementById('modal').classList.add('open');};
+window.openEditModal=id=>{const r=currentData.find(r=>r.id===id);if(!r)return;editId=id;document.getElementById('modal-title').textContent='✏️ 編輯';document.getElementById('modal-body').innerHTML=buildForm(currentPage,r);document.getElementById('modal').classList.add('open');};
+window.closeModal=()=>document.getElementById('modal').classList.remove('open');
+
+window.submitModal=async()=>{
+  const col=PAGES[currentPage].col;
+  const data={};
+  document.querySelectorAll('#modal-body [id^="f-"]').forEach(f=>{data[f.id.replace('f-','')]=f.value;});
+  try{
+    if(editId){await updateDoc(doc(db,col,editId),{...data,updatedAt:serverTimestamp()});toast('更新成功！','success');}
+    else{await addDoc(collection(db,col),{...data,createdAt:serverTimestamp()});toast('新增成功！','success');}
+    closeModal();loadData(currentPage);
+  }catch(e){toast('操作失敗：'+e.message,'error');}
+};
+
+window.confirmDelete=id=>{if(!confirm('確定要刪除？此操作無法復原。'))return;deleteRecord(id);};
+async function deleteRecord(id){
+  try{await deleteDoc(doc(db,PAGES[currentPage].col,id));toast('已刪除','success');loadData(currentPage);}
+  catch(e){toast('刪除失敗','error');}
+}
+
+function updateStats(page,data){
+  if(page==='orders'){
+    document.getElementById('s-order-total').textContent=data.length;
+    document.getElementById('s-order-pending').textContent=data.filter(r=>r.狀態==='待出貨').length;
+    document.getElementById('s-order-done').textContent=data.filter(r=>r.狀態==='已完成').length;
+  }else if(page==='users'){
+    document.getElementById('s-user-total').textContent=data.length;
+    document.getElementById('s-user-active').textContent=data.filter(r=>r.狀態==='啟用').length;
+    document.getElementById('s-user-admin').textContent=data.filter(r=>r.角色==='管理員').length;
+  }else if(page==='products'){
+    document.getElementById('s-prod-total').textContent=data.length;
+    document.getElementById('s-prod-low').textContent=data.filter(r=>Number(r.庫存數量)<10).length;
+    document.getElementById('s-prod-active').textContent=data.filter(r=>r.狀態==='上架').length;
   }
 }
 
-function statusBadge(s) {
-  const map = {
-    '已完成':'badge-green','啟用':'badge-green','上架':'badge-green',
-    '處理中':'badge-blue','待出貨':'badge-orange','待付款':'badge-orange',
-    '已取消':'badge-red','停用':'badge-red','下架':'badge-red'
-  };
-  return `<span class="badge ${map[s]||'badge-blue'}"><span class="badge-dot"></span>${s||'—'}</span>`;
+function showLoading(page){
+  const t=document.getElementById(page+'-tbody');
+  if(t)t.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--t2)">⏳ 載入中...</td></tr>';
 }
 
-function buildForm(page, d) {
-  const v = k => d ? (d[k]||'') : '';
-  if (page === 'orders') return `
+const fmtTs=ts=>{if(!ts)return'—';if(ts.toDate)return ts.toDate().toLocaleString('zh-TW');return ts;};
+const badge=(s)=>{
+  const m={'已完成':'badge-green','啟用':'badge-green','上架':'badge-green','處理中':'badge-blue','待出貨':'badge-orange','待付款':'badge-orange','已取消':'badge-red','停用':'badge-red','下架':'badge-red'};
+  return `<span class="badge ${m[s]||'badge-blue'}"><span class="badge-dot"></span>${s||'—'}</span>`;
+};
+
+function renderTable(page,data){
+  const ce=document.getElementById(page+'-count');if(ce)ce.textContent=`共 ${data.length} 筆`;
+  const tb=document.getElementById(page+'-tbody');if(!tb)return;
+  if(!data.length){tb.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">📭</div><div class="empty-text">尚無資料，點右上角「＋ 新增」加入</div></div></td></tr>';return;}
+  if(page==='orders'){
+    tb.innerHTML=data.map(r=>`<tr>
+      <td class="td-main">${r.訂單編號||'—'}</td><td>${r.客戶名稱||'—'}</td>
+      <td>$${Number(r.金額||0).toLocaleString()}</td><td>${badge(r.狀態)}</td>
+      <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.備註||'—'}</td>
+      <td>${fmtTs(r.createdAt)}</td>
+      <td><div class="td-actions"><button class="btn btn-sm btn-primary" onclick="openEditModal('${r.id}')">編輯</button><button class="btn btn-sm btn-danger" onclick="confirmDelete('${r.id}')">刪除</button></div></td>
+    </tr>`).join('');
+  }else if(page==='users'){
+    tb.innerHTML=data.map(r=>`<tr>
+      <td class="td-main">${r.姓名||'—'}</td><td>${r.Email||'—'}</td><td>${r.電話||'—'}</td>
+      <td>${r.角色||'—'}</td><td>${badge(r.狀態)}</td><td>${fmtTs(r.createdAt)}</td>
+      <td><div class="td-actions"><button class="btn btn-sm btn-primary" onclick="openEditModal('${r.id}')">編輯</button><button class="btn btn-sm btn-danger" onclick="confirmDelete('${r.id}')">刪除</button></div></td>
+    </tr>`).join('');
+  }else if(page==='products'){
+    tb.innerHTML=data.map(r=>`<tr>
+      <td class="td-main">${r.商品名稱||'—'}</td><td>$${Number(r.價格||0).toLocaleString()}</td>
+      <td style="color:${Number(r.庫存數量)<10?'var(--red)':'inherit'};font-weight:${Number(r.庫存數量)<10?'700':'400'}">${r.庫存數量||0}${Number(r.庫存數量)<10?' ⚠️':''}</td>
+      <td>${r.類別||'—'}</td><td>${badge(r.狀態)}</td><td>${fmtTs(r.createdAt)}</td>
+      <td><div class="td-actions"><button class="btn btn-sm btn-primary" onclick="openEditModal('${r.id}')">編輯</button><button class="btn btn-sm btn-danger" onclick="confirmDelete('${r.id}')">刪除</button></div></td>
+    </tr>`).join('');
+  }
+}
+
+function buildForm(page,d){
+  const v=k=>d?(d[k]||''):'';
+  if(page==='orders')return`
     <div class="form-row">
       <div class="form-group"><label class="form-label">訂單編號</label><input class="form-input" id="f-訂單編號" value="${v('訂單編號')}" placeholder="ORD-0001"></div>
       <div class="form-group"><label class="form-label">客戶名稱</label><input class="form-input" id="f-客戶名稱" value="${v('客戶名稱')}" placeholder="王小明"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">金額</label><input class="form-input" id="f-金額" type="number" value="${v('金額')}" placeholder="0"></div>
-      <div class="form-group"><label class="form-label">狀態</label>
-        <select class="form-select" id="f-狀態">${['待付款','處理中','待出貨','已完成','已取消'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}</select>
-      </div>
+      <div class="form-group"><label class="form-label">狀態</label><select class="form-select" id="f-狀態">${['待付款','處理中','待出貨','已完成','已取消'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}</select></div>
     </div>
     <div class="form-group"><label class="form-label">備註</label><input class="form-input" id="f-備註" value="${v('備註')}" placeholder="選填"></div>`;
-  if (page === 'users') return `
+  if(page==='users')return`
     <div class="form-row">
       <div class="form-group"><label class="form-label">姓名</label><input class="form-input" id="f-姓名" value="${v('姓名')}" placeholder="王小明"></div>
       <div class="form-group"><label class="form-label">電話</label><input class="form-input" id="f-電話" value="${v('電話')}" placeholder="0912-345-678"></div>
     </div>
     <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="f-Email" type="email" value="${v('Email')}" placeholder="example@gmail.com"></div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">角色</label>
-        <select class="form-select" id="f-角色">${['一般用戶','管理員','編輯者','檢視者'].map(s=>`<option ${v('角色')===s?'selected':''}>${s}</option>`).join('')}</select>
-      </div>
-      <div class="form-group"><label class="form-label">狀態</label>
-        <select class="form-select" id="f-狀態">${['啟用','停用'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}</select>
-      </div>
+      <div class="form-group"><label class="form-label">角色</label><select class="form-select" id="f-角色">${['一般用戶','管理員','編輯者','檢視者'].map(s=>`<option ${v('角色')===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">狀態</label><select class="form-select" id="f-狀態">${['啟用','停用'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}</select></div>
     </div>`;
-  if (page === 'products') return `
+  if(page==='products')return`
     <div class="form-row">
       <div class="form-group"><label class="form-label">商品名稱</label><input class="form-input" id="f-商品名稱" value="${v('商品名稱')}" placeholder="商品名稱"></div>
       <div class="form-group"><label class="form-label">類別</label><input class="form-input" id="f-類別" value="${v('類別')}" placeholder="電子產品"></div>
@@ -314,56 +300,38 @@ function buildForm(page, d) {
       <div class="form-group"><label class="form-label">價格</label><input class="form-input" id="f-價格" type="number" value="${v('價格')}" placeholder="0"></div>
       <div class="form-group"><label class="form-label">庫存數量</label><input class="form-input" id="f-庫存數量" type="number" value="${v('庫存數量')}" placeholder="0"></div>
     </div>
-    <div class="form-group"><label class="form-label">狀態</label>
-      <select class="form-select" id="f-狀態">${['上架','下架'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}</select>
-    </div>`;
+    <div class="form-group"><label class="form-label">狀態</label><select class="form-select" id="f-狀態">${['上架','下架'].map(s=>`<option ${v('狀態')===s?'selected':''}>${s}</option>`).join('')}</select></div>`;
 }
 
-// ── Toast ──
-window.toast = (msg, type='success') => {
-  const wrap = document.getElementById('toasts');
-  const el   = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.innerHTML = (type==='success'?'✅ ':'❌ ') + msg;
-  wrap.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+window.toast=(msg,type='success')=>{
+  const el=document.createElement('div');
+  el.className=`toast ${type}`;
+  el.innerHTML=(type==='success'?'✅ ':'❌ ')+msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=>el.remove(),3500);
 };
-
-// ── Modal 背景關閉 ──
-document.getElementById('modal').addEventListener('click', e => {
-  if (e.target.id === 'modal') closeModal();
-});
-
+document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
 </script>
 <style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bgh:#2d333b;--border:#30363d;--accent:#58a6ff;--green:#3fb950;--red:#f78166;--orange:#ffa657;--purple:#d2a8ff;--t1:#e6edf3;--t2:#8b949e;--t3:#484f58}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--t1);height:100vh;overflow:hidden}
-
-/* LOGIN */
 .login-wrap{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999}
 .login-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:380px;text-align:center;box-shadow:0 24px 64px rgba(0,0,0,.6);animation:fadeUp .4s ease}
 .login-icon{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 20px}
-.login-title{font-size:22px;font-weight:700;margin-bottom:4px}
-.login-sub{font-size:13px;color:var(--t2);margin-bottom:28px}
+.login-title{font-size:22px;font-weight:700;margin-bottom:4px}.login-sub{font-size:13px;color:var(--t2);margin-bottom:28px}
 .login-label{display:block;font-size:12px;font-weight:500;color:var(--t2);text-align:left;margin-bottom:5px}
 .login-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--t1);font-size:13px;font-family:inherit;outline:none;transition:border-color .15s;margin-bottom:12px}
 .login-input:focus{border-color:var(--accent)}
 .login-btn{width:100%;padding:11px;border-radius:8px;background:var(--accent);color:#0d1117;font-size:14px;font-weight:700;font-family:inherit;border:none;cursor:pointer;transition:background .15s;margin-top:4px}
-.login-btn:hover{background:#79b8ff}
-.login-btn:disabled{opacity:.6;cursor:not-allowed}
+.login-btn:hover{background:#79b8ff}.login-btn:disabled{opacity:.6;cursor:not-allowed}
 .login-error{font-size:12px;color:var(--red);margin-top:10px;min-height:18px}
 .login-secure{font-size:11px;color:var(--t3);margin-top:14px}
-
-/* APP */
 #appWrap{display:none;height:100vh;overflow:hidden}
-
-/* SIDEBAR */
 .sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .logo{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
 .logo-icon{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:17px}
-.logo-text{font-size:14px;font-weight:700}
-.logo-sub{font-size:10px;color:var(--t2)}
+.logo-text{font-size:14px;font-weight:700}.logo-sub{font-size:10px;color:var(--t2)}
 nav{flex:1;padding:12px 10px;overflow-y:auto}
 .nav-group{font-size:10px;font-weight:600;color:var(--t3);letter-spacing:1px;text-transform:uppercase;padding:10px 10px 4px}
 .nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--t2);transition:all .15s;margin-bottom:1px;position:relative}
@@ -374,93 +342,67 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
 .sidebar-foot{padding:14px;border-top:1px solid var(--border)}
 .user-card{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;background:var(--bg3)}
 .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
-.u-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}
-.u-role{font-size:10px;color:var(--t2)}
-.logout-btn{cursor:pointer;color:var(--t2);font-size:13px;padding:3px;border-radius:4px;flex-shrink:0}
-.logout-btn:hover{color:var(--red)}
-
-/* MAIN */
+.u-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}.u-role{font-size:10px;color:var(--t2)}
+.logout-btn{cursor:pointer;color:var(--t2);font-size:13px;padding:3px;border-radius:4px;flex-shrink:0}.logout-btn:hover{color:var(--red)}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .topbar{height:56px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0}
 .page-title{font-size:15px;font-weight:600;flex:1}
-.search-box{display:flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12px;color:var(--t2);min-width:160px}
+.search-box{display:flex;align-items:center;gap:7px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:6px 12px;min-width:160px}
 .search-box input{background:none;border:none;outline:none;color:var(--t1);font-size:12px;font-family:inherit;width:100%}
 .search-box input::placeholder{color:var(--t2)}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:inherit}
-.btn-primary{background:var(--accent);color:#0d1117}
-.btn-primary:hover{background:#79b8ff}
-.btn-danger{background:rgba(247,129,102,.15);color:var(--red);border:1px solid rgba(247,129,102,.3)}
-.btn-danger:hover{background:rgba(247,129,102,.25)}
+.btn-primary{background:var(--accent);color:#0d1117}.btn-primary:hover{background:#79b8ff}
+.btn-success{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}.btn-success:hover{background:rgba(63,185,80,.25)}
+.btn-danger{background:rgba(247,129,102,.15);color:var(--red);border:1px solid rgba(247,129,102,.3)}.btn-danger:hover{background:rgba(247,129,102,.25)}
 .btn-sm{padding:4px 10px;font-size:11px}
 .content{flex:1;overflow-y:auto;padding:24px}
-
-/* PAGES */
-.page{display:none}
-.page.active{display:block;animation:fadeUp .3s ease}
+.page{display:none}.page.active{display:block;animation:fadeUp .3s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-
-/* STATS */
 .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.report-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
 .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px;transition:border-color .2s,transform .2s}
 .stat-card:hover{border-color:var(--accent);transform:translateY(-2px)}
-.stat-label{font-size:11px;color:var(--t2);margin-bottom:8px}
-.stat-val{font-size:26px;font-weight:700;letter-spacing:-0.5px}
-.stat-sub{font-size:11px;color:var(--t2);margin-top:4px}
-
-/* TABLE */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden}
-.card-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
-.card-title{font-size:14px;font-weight:600}
+.stat-label{font-size:11px;color:var(--t2);margin-bottom:8px}.stat-val{font-size:26px;font-weight:700;letter-spacing:-0.5px}.stat-sub{font-size:11px;color:var(--t2);margin-top:4px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:600}.card-actions{display:flex;gap:8px;align-items:center}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-box{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px}
+.chart-title{font-size:13px;font-weight:600;margin-bottom:16px}
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;padding:9px 16px;font-size:10px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap}
 td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--t2);vertical-align:middle}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:var(--bgh)}
+tr:last-child td{border-bottom:none}tr:hover td{background:var(--bgh)}
 .td-main{color:var(--t1);font-weight:500}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:600}
-.badge-green{background:rgba(63,185,80,.12);color:var(--green)}
-.badge-blue{background:rgba(88,166,255,.12);color:var(--accent)}
-.badge-orange{background:rgba(255,166,87,.12);color:var(--orange)}
-.badge-red{background:rgba(247,129,102,.12);color:var(--red)}
+.badge-green{background:rgba(63,185,80,.12);color:var(--green)}.badge-blue{background:rgba(88,166,255,.12);color:var(--accent)}
+.badge-orange{background:rgba(255,166,87,.12);color:var(--orange)}.badge-red{background:rgba(247,129,102,.12);color:var(--red)}
 .badge-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
 .td-actions{display:flex;gap:6px}
-.empty{text-align:center;padding:48px 20px;color:var(--t2)}
-.empty-icon{font-size:36px;margin-bottom:10px;opacity:.5}
-.empty-text{font-size:13px}
-
-/* MODAL */
+.empty{text-align:center;padding:40px;color:var(--t2)}.empty-icon{font-size:32px;margin-bottom:8px;opacity:.5}.empty-text{font-size:13px}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px)}
 .modal-bg.open{display:flex}
 .modal{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .25s ease}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border)}
 .modal-title{font-size:15px;font-weight:600}
-.modal-close{cursor:pointer;color:var(--t2);font-size:18px;padding:2px 6px;border-radius:4px}
-.modal-close:hover{background:var(--bgh);color:var(--t1)}
+.modal-close{cursor:pointer;color:var(--t2);font-size:18px;padding:2px 6px;border-radius:4px}.modal-close:hover{background:var(--bgh);color:var(--t1)}
 .modal-body{padding:20px}
 .form-group{margin-bottom:16px}
 .form-label{display:block;font-size:12px;font-weight:500;color:var(--t2);margin-bottom:6px}
 .form-input,.form-select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 12px;color:var(--t1);font-size:13px;font-family:inherit;outline:none;transition:border-color .15s}
-.form-input:focus,.form-select:focus{border-color:var(--accent)}
-.form-select option{background:var(--bg2)}
+.form-input:focus,.form-select:focus{border-color:var(--accent)}.form-select option{background:var(--bg2)}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 20px;border-top:1px solid var(--border)}
-
-/* TOAST */
 .toast-wrap{position:fixed;top:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:9999}
 .toast{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--t1);box-shadow:0 8px 32px rgba(0,0,0,.4);animation:slideIn .3s ease;display:flex;align-items:center;gap:8px}
-.toast.success{border-color:var(--green);color:var(--green)}
-.toast.error{border-color:var(--red);color:var(--red)}
+.toast.success{border-color:var(--green);color:var(--green)}.toast.error{border-color:var(--red);color:var(--red)}
 @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
-
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 </style>
 </head>
 <body>
 
-<!-- 登入畫面 -->
 <div class="login-wrap" id="loginWrap">
   <div class="login-box">
     <div class="login-icon">🔐</div>
@@ -476,7 +418,6 @@ tr:hover td{background:var(--bgh)}
   </div>
 </div>
 
-<!-- 主應用程式 -->
 <div id="appWrap" style="display:flex">
   <aside class="sidebar">
     <div class="logo">
@@ -488,14 +429,13 @@ tr:hover td{background:var(--bgh)}
       <div class="nav-item active" onclick="showPage('orders',this)"><span class="nav-icon">📦</span>訂單管理</div>
       <div class="nav-item" onclick="showPage('users',this)"><span class="nav-icon">👥</span>用戶管理</div>
       <div class="nav-item" onclick="showPage('products',this)"><span class="nav-icon">🛒</span>商品庫存</div>
+      <div class="nav-group">分析報表</div>
+      <div class="nav-item" onclick="showPage('report',this)"><span class="nav-icon">📊</span>報表總覽</div>
     </nav>
     <div class="sidebar-foot">
       <div class="user-card">
         <div class="avatar">管</div>
-        <div style="flex:1;overflow:hidden">
-          <div class="u-name" id="userEmail">—</div>
-          <div class="u-role">管理員</div>
-        </div>
+        <div style="flex:1;overflow:hidden"><div class="u-name" id="userEmail">—</div><div class="u-role">管理員</div></div>
         <span class="logout-btn" onclick="doLogout()" title="登出">🚪</span>
       </div>
     </div>
@@ -505,7 +445,7 @@ tr:hover td{background:var(--bgh)}
     <header class="topbar">
       <div class="page-title" id="pageTitle">訂單管理</div>
       <div class="search-box">🔍&nbsp;<input type="text" id="searchInput" placeholder="搜尋..." oninput="onSearch()"></div>
-      <button class="btn btn-primary" onclick="openAddModal()">＋ 新增</button>
+      <button class="btn btn-primary" id="addBtn" onclick="openAddModal()">＋ 新增</button>
     </header>
     <div class="content">
 
@@ -517,7 +457,7 @@ tr:hover td{background:var(--bgh)}
           <div class="stat-card"><div class="stat-label">已完成</div><div class="stat-val" id="s-order-done" style="color:var(--green)">—</div><div class="stat-sub">本月</div></div>
         </div>
         <div class="card">
-          <div class="card-head"><span class="card-title">訂單列表</span><span id="orders-count" style="font-size:12px;color:var(--t2)"></span></div>
+          <div class="card-head"><span class="card-title">訂單列表</span><div class="card-actions"><span id="orders-count" style="font-size:12px;color:var(--t2)"></span><button class="btn btn-success btn-sm" onclick="exportCSV('orders')">⬇ 匯出 CSV</button></div></div>
           <div class="table-wrap"><table><thead><tr><th>訂單編號</th><th>客戶名稱</th><th>金額</th><th>狀態</th><th>備註</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="orders-tbody"></tbody></table></div>
         </div>
       </div>
@@ -530,7 +470,7 @@ tr:hover td{background:var(--bgh)}
           <div class="stat-card"><div class="stat-label">管理員</div><div class="stat-val" id="s-user-admin" style="color:var(--purple)">—</div><div class="stat-sub">管理員帳號</div></div>
         </div>
         <div class="card">
-          <div class="card-head"><span class="card-title">用戶列表</span><span id="users-count" style="font-size:12px;color:var(--t2)"></span></div>
+          <div class="card-head"><span class="card-title">用戶列表</span><div class="card-actions"><span id="users-count" style="font-size:12px;color:var(--t2)"></span><button class="btn btn-success btn-sm" onclick="exportCSV('users')">⬇ 匯出 CSV</button></div></div>
           <div class="table-wrap"><table><thead><tr><th>姓名</th><th>Email</th><th>電話</th><th>角色</th><th>狀態</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="users-tbody"></tbody></table></div>
         </div>
       </div>
@@ -539,12 +479,30 @@ tr:hover td{background:var(--bgh)}
       <div class="page" id="page-products">
         <div class="stats-row">
           <div class="stat-card"><div class="stat-label">商品總數</div><div class="stat-val" id="s-prod-total">—</div><div class="stat-sub">全部商品</div></div>
-          <div class="stat-card"><div class="stat-label">低庫存</div><div class="stat-val" id="s-prod-low" style="color:var(--red)">—</div><div class="stat-sub">庫存 &lt; 10</div></div>
+          <div class="stat-card"><div class="stat-label">低庫存 ⚠️</div><div class="stat-val" id="s-prod-low" style="color:var(--red)">—</div><div class="stat-sub">庫存 &lt; 10</div></div>
           <div class="stat-card"><div class="stat-label">上架中</div><div class="stat-val" id="s-prod-active" style="color:var(--green)">—</div><div class="stat-sub">販售中</div></div>
         </div>
         <div class="card">
-          <div class="card-head"><span class="card-title">商品列表</span><span id="products-count" style="font-size:12px;color:var(--t2)"></span></div>
+          <div class="card-head"><span class="card-title">商品列表</span><div class="card-actions"><span id="products-count" style="font-size:12px;color:var(--t2)"></span><button class="btn btn-success btn-sm" onclick="exportCSV('products')">⬇ 匯出 CSV</button></div></div>
           <div class="table-wrap"><table><thead><tr><th>商品名稱</th><th>價格</th><th>庫存</th><th>類別</th><th>狀態</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="products-tbody"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- 報表 -->
+      <div class="page" id="page-report">
+        <div class="report-stats">
+          <div class="stat-card"><div class="stat-label">累計營收</div><div class="stat-val" id="r-rev" style="color:var(--green);font-size:20px">—</div><div class="stat-sub">已完成訂單合計</div></div>
+          <div class="stat-card"><div class="stat-label">總訂單數</div><div class="stat-val" id="r-orders">—</div><div class="stat-sub">全部訂單</div></div>
+          <div class="stat-card"><div class="stat-label">用戶總數</div><div class="stat-val" id="r-users">—</div><div class="stat-sub">全部用戶</div></div>
+          <div class="stat-card"><div class="stat-label">低庫存商品</div><div class="stat-val" id="r-low" style="color:var(--red)">—</div><div class="stat-sub">需要補貨</div></div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-box"><div class="chart-title">📈 月營收趨勢</div><canvas id="chartRevenue"></canvas></div>
+          <div class="chart-box"><div class="chart-title">🍩 訂單狀態分布</div><canvas id="chartStatus"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">⚠️ 庫存警示清單</span><button class="btn btn-success btn-sm" onclick="exportCSV('products')">⬇ 匯出商品 CSV</button></div>
+          <div class="table-wrap"><table><thead><tr><th>商品名稱</th><th>庫存數量</th><th>類別</th><th>警示等級</th></tr></thead><tbody id="low-stock-tbody"></tbody></table></div>
         </div>
       </div>
 
@@ -552,13 +510,9 @@ tr:hover td{background:var(--bgh)}
   </main>
 </div>
 
-<!-- MODAL -->
 <div class="modal-bg" id="modal">
   <div class="modal">
-    <div class="modal-head">
-      <span class="modal-title" id="modal-title">新增</span>
-      <span class="modal-close" onclick="closeModal()">✕</span>
-    </div>
+    <div class="modal-head"><span class="modal-title" id="modal-title">新增</span><span class="modal-close" onclick="closeModal()">✕</span></div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-foot">
       <button class="btn" style="background:var(--bg3);color:var(--t1)" onclick="closeModal()">取消</button>
@@ -566,9 +520,6 @@ tr:hover td{background:var(--bgh)}
     </div>
   </div>
 </div>
-
 <div class="toast-wrap" id="toasts"></div>
-
-
 </body>
 </html>
